@@ -1,0 +1,63 @@
+pipeline {
+    agent any
+    
+    environment {
+        AWS_REGION = "us-east-1"
+        // Credential management - using Jenkins credential store
+        AWS_CREDENTIALS = credentials('aws-credentials-id')
+    }
+    
+    stages {
+        stage('Clone Repository') {
+            steps {
+                git 'https://github.com/your-repo.git'
+            }
+        }
+        
+        stage('Tests') {
+            // Parallel test execution
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        sh 'npm install'
+                        sh 'npm test'
+                    }
+                }
+                
+                stage('Integration Tests') {
+                    steps {
+                        sh 'npm run test:integration'
+                    }
+                }
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t myapp:latest .'
+            }
+        }
+        
+        stage('Run Security Scan') {
+            steps {
+                // Using credentials for security scanning
+                withCredentials([string(credentialsId: 'trivy-token', variable: 'TRIVY_TOKEN')]) {
+                    sh 'trivy image myapp:latest'
+                }
+            }
+        }
+        
+        stage('Deploy to Kubernetes') {
+            steps {
+                // Using AWS credentials for deployment
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
+                                  credentialsId: 'aws-credentials-id', 
+                                  accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
+                                  secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
+                    sh 'aws eks update-kubeconfig --region ${AWS_REGION}'
+                    sh 'kubectl apply -f deployment.yaml'
+                }
+            }
+        }
+    }
+}
